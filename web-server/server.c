@@ -38,8 +38,10 @@ int main(int argc, char *argv[])
   // 
   // CS537 (Part A): Create some threads...
   //
-  
+  int size = 0;
+  int workbuffer[MAXBUF];
   pthread_t workers[THREAD_CNT];
+
   for (int i = 0; i < THREAD_CNT; ++i) {
     pthread_create(&workers[i], NULL, worker_func, NULL);
   }
@@ -55,7 +57,7 @@ int main(int argc, char *argv[])
   while (1) {
     clientlen = sizeof(clientaddr);
     connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
-
+    inserttobuffer(connfd, workbuffer);
     // 
     // CS537 (Part A): In general, don't handle the request in the main thread.
     // Save the relevant info in a buffer and have one of the worker threads 
