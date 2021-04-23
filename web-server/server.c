@@ -28,14 +28,28 @@ int main(int argc, char *argv[])
   struct sockaddr_in clientaddr;
 
   getargs(&port, argc, argv);
+  
+
 
   //
   // CS537 (Part B): Create & initialize the shared memory region...
   //
-
+  
   // 
   // CS537 (Part A): Create some threads...
   //
+  
+  pthread_t workers[THREAD_CNT];
+  for (int i = 0; i < THREAD_CNT; ++i) {
+    pthread_create(&workers[i], NULL, worker_func, NULL);
+  }
+
+  for (int i = 0; i < THREAD_CNT; ++i) {
+    pthread_join(workers[i], NULL);
+  }
+
+
+
 
   listenfd = Open_listenfd(port);
   while (1) {
