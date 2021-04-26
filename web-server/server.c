@@ -11,26 +11,87 @@
 // Most of the work is done within routines written in request.c
 //
 
+
+pthread_cond_t buf_not_full;
+pthread_condattr_t buf_not_full_attr;
+pthread_cond_t buf_not_empty;
+pthread_condattr_t buf_not_empty_attr;
+
+
+// Lock and corresponding shared memory object
+pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
+int size = 0;
+
+void addtobuffer(int connfd, void *arg){
+  
+  int* work_buffer = *(int**) arg;
+
+  pthread_mutex_lock(&buffer_mutex);
+  while(size == MAXBUF)
+    pthread_cond_wait(&buf_not_full, &buffer_mutex);
+  work_buffer[size++] = connfd;
+  pthread_cond_signal(&buf_not_empty);
+  pthread_mutex_unlock(&buffer_mutex);
+}
+
+static void * 
+worker_func(void *arg) {
+  int* work_buffer = *(int**) arg;
+  while(1) {
+    pthread_mutex_lock(&buffer_mutex);
+   
+    while(size == 0)
+      pthread_cond_wait(&buf_not_empty, &buffer_mutex);
+   
+    int connfd = work_buffer[size--];
+    pthread_cond_signal(&buf_not_full);
+    pthread_mutex_unlock(&buffer_mutex);
+   
+    requestHandle(connfd);
+    Close(connfd);
+  }
+  return NULL;  
+}
+
+
 // CS537: Parse the new arguments too
-void getargs(int *port, int argc, char *argv[])
+void getargs(int *port, int* threads, int* buffers, char** shm_name, int argc, char *argv[])
 {
-  if (argc != 2) {
+  if (argc != 5) {
     fprintf(stderr, "Usage: %s <port>\n", argv[0]);
     exit(1);
   }
   *port = atoi(argv[1]);
+  *threads = atoi(argv[2]);
+  *buffers = atoi(argv[3]);
+  *shm_name = (char*) argv[4];
 }
 
 
 int main(int argc, char *argv[])
 {
-  int listenfd, connfd, port, clientlen;
+  int listenfd, connfd, port, threads, buffers, clientlen;
+  char* shm_name;
   struct sockaddr_in clientaddr;
-
-  getargs(&port, argc, argv);
   
+ 
+  getargs(&port, &threads, &buffers, &shm_name, argc, argv);
+  listenfd = Open_listenfd(port);
 
-
+  pthread_condattr_init(&buf_not_full_attr);
+  pthread_cond_init(&buf_not_full, &buf_not_full_attr);
+  pthread_condattr_init(&buf_not_empty_attr);
+  pthread_cond_init(&buf_not_empty, &buf_not_empty_attr);
+  
+  if(buffers > MAXBUF)
+    exit(1);
+  if(buffers < 0)
+    exit(1);
+  if(threads < 0)
+    exit(1);
+  if(port < 0)
+    exit(1);
+  int work_buffer[buffers];
   //
   // CS537 (Part B): Create & initialize the shared memory region...
   //
@@ -38,12 +99,10 @@ int main(int argc, char *argv[])
   // 
   // CS537 (Part A): Create some threads...
   //
-  int size = 0;
-  int workbuffer[MAXBUF];
-  pthread_t workers[THREAD_CNT];
+  pthread_t workers[threads];
 
   for (int i = 0; i < THREAD_CNT; ++i) {
-    pthread_create(&workers[i], NULL, worker_func, NULL);
+    pthread_create(&workers[i], NULL, worker_func, &work_buffer);
   }
 
   for (int i = 0; i < THREAD_CNT; ++i) {
@@ -53,17 +112,14 @@ int main(int argc, char *argv[])
 
 
 
-  listenfd = Open_listenfd(port);
   while (1) {
     clientlen = sizeof(clientaddr);
     connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
-    inserttobuffer(connfd, workbuffer);
+    addtobuffer(connfd, &work_buffer);
     // 
     // CS537 (Part A): In general, don't handle the request in the main thread.
     // Save the relevant info in a buffer and have one of the worker threads 
     // do the work. Also let the worker thread close the connection.
     // 
-    requestHandle(connfd);
-    Close(connfd);
   }
 }
