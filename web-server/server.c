@@ -115,4 +115,7 @@ int main(int argc, char *argv[])
     // do the work. Also let the worker thread close the connection.
     // 
   }
+  for(int i = 0; i < threads; ++i) {
+    pthread_join(workers[i], NULL);
+  }
 }
