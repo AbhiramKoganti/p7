@@ -11,27 +11,27 @@
 // Most of the work is done within routines written in request.c
 //
 
-
+// Condition variables for buffer
 pthread_cond_t buf_not_full;
 pthread_condattr_t buf_not_full_attr;
 pthread_cond_t buf_not_empty;
 pthread_condattr_t buf_not_empty_attr;
 
+int buf_size;
 
-// Lock and corresponding shared memory object
+
+// Lock for the work buffer
 pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
 int size = 0;
 
 void addtobuffer(int connfd, void *arg){
-  
   int* work_buffer = *(int**) arg;
-
   pthread_mutex_lock(&buffer_mutex);
-  while(size == MAXBUF)
+  while(size == buf_size)
     pthread_cond_wait(&buf_not_full, &buffer_mutex);
   work_buffer[size++] = connfd;
-  pthread_cond_signal(&buf_not_empty);
   pthread_mutex_unlock(&buffer_mutex);
+  pthread_cond_signal(&buf_not_empty);
 }
 
 static void * 
@@ -39,14 +39,13 @@ worker_func(void *arg) {
   int* work_buffer = *(int**) arg;
   while(1) {
     pthread_mutex_lock(&buffer_mutex);
-   
-    while(size == 0)
+    while(size == 0){
       pthread_cond_wait(&buf_not_empty, &buffer_mutex);
-   
-    int connfd = work_buffer[size--];
-    pthread_cond_signal(&buf_not_full);
+    }
+    int connfd = work_buffer[--size];
     pthread_mutex_unlock(&buffer_mutex);
-   
+    pthread_cond_signal(&buf_not_full);
+
     requestHandle(connfd);
     Close(connfd);
   }
@@ -73,10 +72,10 @@ int main(int argc, char *argv[])
   int listenfd, connfd, port, threads, buffers, clientlen;
   char* shm_name;
   struct sockaddr_in clientaddr;
-  
  
   getargs(&port, &threads, &buffers, &shm_name, argc, argv);
-  listenfd = Open_listenfd(port);
+  buf_size = buffers;
+
 
   pthread_condattr_init(&buf_not_full_attr);
   pthread_cond_init(&buf_not_full, &buf_not_full_attr);
@@ -95,26 +94,20 @@ int main(int argc, char *argv[])
   //
   // CS537 (Part B): Create & initialize the shared memory region...
   //
-  
   // 
   // CS537 (Part A): Create some threads...
   //
   pthread_t workers[threads];
-
-  for (int i = 0; i < THREAD_CNT; ++i) {
+  for (int i = 0; i < threads; ++i) {
     pthread_create(&workers[i], NULL, worker_func, &work_buffer);
   }
 
-  for (int i = 0; i < THREAD_CNT; ++i) {
-    pthread_join(workers[i], NULL);
-  }
 
-
-
-
+  listenfd = Open_listenfd(port);
   while (1) {
     clientlen = sizeof(clientaddr);
     connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
+    
     addtobuffer(connfd, &work_buffer);
     // 
     // CS537 (Part A): In general, don't handle the request in the main thread.
