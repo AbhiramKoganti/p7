@@ -1,5 +1,6 @@
 #include "helper.h"
 #include "request.h"
+#include "shared-memory-slot.h"
 
 // 
 // server.c: A very, very simple web server
@@ -16,9 +17,10 @@ pthread_cond_t buf_not_full;
 pthread_condattr_t buf_not_full_attr;
 pthread_cond_t buf_not_empty;
 pthread_condattr_t buf_not_empty_attr;
+ slot_t *shm_ptr;
 
 int buf_size;
-
+int thread_count;
 
 // Lock for the work buffer
 pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -29,24 +31,57 @@ void addtobuffer(int connfd, void *arg){
   pthread_mutex_lock(&buffer_mutex);
   while(size == buf_size)
     pthread_cond_wait(&buf_not_full, &buffer_mutex);
-  work_buffer[size++] = connfd;
-  pthread_mutex_unlock(&buffer_mutex);
+  work_buffer[size] = connfd;
+  size=size+1;
+  
   pthread_cond_signal(&buf_not_empty);
+  pthread_mutex_unlock(&buffer_mutex);//change made here
+  
 }
 
 static void * 
 worker_func(void *arg) {
   int* work_buffer = *(int**) arg;
   while(1) {
+    
     pthread_mutex_lock(&buffer_mutex);
     while(size == 0){
       pthread_cond_wait(&buf_not_empty, &buffer_mutex);
     }
-    int connfd = work_buffer[--size];
-    pthread_mutex_unlock(&buffer_mutex);
+    size=size-1;
+    int connfd = work_buffer[size];
+    
     pthread_cond_signal(&buf_not_full);
+    pthread_mutex_unlock(&buffer_mutex);// change made here
+    int request_type=requestHandle(connfd);
+    int thread_index=-1;
+    for(int i=0;i<thread_count;i++){
+      if(shm_ptr[i].thread_id==pthread_self()){
+        thread_index=i;
+        break;
+      }
+    }
+    if(thread_index!=-1){
+      shm_ptr[thread_count].requests=shm_ptr[thread_count].requests+1;
+      if(request_type==1){
+        shm_ptr[thread_count].dynamic_requests=shm_ptr[thread_count].dynamic_requests+1;
+      }
+      else if(request_type==0){
+        shm_ptr[thread_count].static_requests=shm_ptr[thread_count].static_requests+1;
+      }
 
-    requestHandle(connfd);
+    }
+    else{
+      shm_ptr[thread_count].thread_id=pthread_self();
+      shm_ptr[thread_count].requests=shm_ptr[thread_count].requests+1;
+      if(request_type==1){
+        shm_ptr[thread_count].dynamic_requests=shm_ptr[thread_count].dynamic_requests+1;
+        }
+      else if(request_type==0){
+        shm_ptr[thread_count].static_requests=shm_ptr[thread_count].static_requests+1;
+        }
+      thread_count++;
+    }
     Close(connfd);
   }
   return NULL;  
@@ -57,7 +92,7 @@ worker_func(void *arg) {
 void getargs(int *port, int* threads, int* buffers, char** shm_name, int argc, char *argv[])
 {
   if (argc != 5) {
-    fprintf(stderr, "Usage: %s <port>\n", argv[0]);
+    fprintf(stderr, "Usage: %s <port> other stuff to\n", argv[0]);
     exit(1);
   }
   *port = atoi(argv[1]);
@@ -72,8 +107,18 @@ int main(int argc, char *argv[])
   int listenfd, connfd, port, threads, buffers, clientlen;
   char* shm_name;
   struct sockaddr_in clientaddr;
- 
+  int pagesize = getpagesize();
+
   getargs(&port, &threads, &buffers, &shm_name, argc, argv);
+  int shm_fd = shm_open(shm_name, O_RDWR | O_CREAT, 0660);
+  if (shm_fd < 0) {
+        perror("shm_open");
+        exit(1);
+    }
+  int ret = ftruncate(shm_fd, pagesize);
+    if(ret!=0){
+    exit(1);
+  }
   buf_size = buffers;
 
 
@@ -102,12 +147,16 @@ int main(int argc, char *argv[])
     pthread_create(&workers[i], NULL, worker_func, &work_buffer);
   }
 
-
+  shm_ptr= mmap(NULL, pagesize, PROT_WRITE, MAP_SHARED, shm_fd, 0);
+     if (shm_ptr == MAP_FAILED) {
+        perror("mmap");
+        return 1;
+    }
   listenfd = Open_listenfd(port);
   while (1) {
     clientlen = sizeof(clientaddr);
     connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
-    
+    // fprintf(stdout,"made it here\n");
     addtobuffer(connfd, &work_buffer);
     // 
     // CS537 (Part A): In general, don't handle the request in the main thread.
