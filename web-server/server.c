@@ -17,7 +17,8 @@ pthread_cond_t buf_not_full;
 pthread_condattr_t buf_not_full_attr;
 pthread_cond_t buf_not_empty;
 pthread_condattr_t buf_not_empty_attr;
- slot_t *shm_ptr;
+slot_t *shm_ptr;
+int * temp;
 
 int buf_size;
 int thread_count;
@@ -29,7 +30,10 @@ int head = 0;
 int tail = 0;
 
 void addtobuffer(int connfd, void *arg){
-  int* work_buffer = *(int**) arg;
+  int* work_buffer = temp;
+  //  printf("in add buffer\n");
+  work_buffer[0]=0;
+ 
   pthread_mutex_lock(&buffer_mutex);
   while(size == buf_size)
     pthread_cond_wait(&buf_not_full, &buffer_mutex);
@@ -39,12 +43,12 @@ void addtobuffer(int connfd, void *arg){
   
   pthread_cond_signal(&buf_not_empty);
   pthread_mutex_unlock(&buffer_mutex);//change made here
-  
+  // printf("adding\n");
 }
 
 static void * 
 worker_func(void *arg) {
-  int* work_buffer = *(int**) arg;
+  int* work_buffer = temp;
   while(1) {
     
     pthread_mutex_lock(&buffer_mutex);
@@ -66,12 +70,12 @@ worker_func(void *arg) {
       }
     }
     if(thread_index!=-1){
-      shm_ptr[thread_count].requests=shm_ptr[thread_count].requests+1;
+      shm_ptr[thread_index].requests=shm_ptr[thread_index].requests+1;
       if(request_type==1){
-        shm_ptr[thread_count].dynamic_requests=shm_ptr[thread_count].dynamic_requests+1;
+        shm_ptr[thread_index].dynamic_requests=shm_ptr[thread_index].dynamic_requests+1;
       }
       else if(request_type==0){
-        shm_ptr[thread_count].static_requests=shm_ptr[thread_count].static_requests+1;
+        shm_ptr[thread_index].static_requests=shm_ptr[thread_index].static_requests+1;
       }
 
     }
@@ -139,7 +143,17 @@ int main(int argc, char *argv[])
     exit(1);
   if(port < 0)
     exit(1);
-  int work_buffer[buffers];
+  // if(threads==8){
+  //   exit(1);
+  // }
+  // if(buffers==5){
+  //   exit(1);
+  // }
+  int work_buffer[buf_size];
+  // printf("insallah\n");
+  // work_buffer[0]=0;
+  temp=work_buffer;
+  // printf("allahoakbar\n");
   //
   // CS537 (Part B): Create & initialize the shared memory region...
   //
@@ -156,6 +170,7 @@ int main(int argc, char *argv[])
         perror("mmap");
         return 1;
     }
+  // fprintf(stdout,"made it here");
   listenfd = Open_listenfd(port);
   while (1) {
     clientlen = sizeof(clientaddr);
@@ -168,7 +183,7 @@ int main(int argc, char *argv[])
     // do the work. Also let the worker thread close the connection.
     // 
   }
-  for(int i = 0; i < threads; ++i) {
-    pthread_join(workers[i], NULL);
-  }
+  // for(int i = 0; i < threads; ++i) {
+  //   pthread_join(workers[i], NULL);
+  // }
 }

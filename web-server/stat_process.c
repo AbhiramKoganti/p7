@@ -77,7 +77,6 @@ int main(int argc, char *argv[]){
       fprintf(stdout,"%d\n",count);
       fprintf(stdout,"%lu : %d %d %d\n",shm_ptr[i].thread_id,shm_ptr[i].requests,shm_ptr[i].static_requests,shm_ptr[i].dynamic_requests);
 
-
     }
     count++;
   }
