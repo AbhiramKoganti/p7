@@ -25,14 +25,17 @@ int thread_count;
 // Lock for the work buffer
 pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
 int size = 0;
+int head = 0;
+int tail = 0;
 
 void addtobuffer(int connfd, void *arg){
   int* work_buffer = *(int**) arg;
   pthread_mutex_lock(&buffer_mutex);
   while(size == buf_size)
     pthread_cond_wait(&buf_not_full, &buffer_mutex);
-  work_buffer[size] = connfd;
+  work_buffer[tail] = connfd;
   size=size+1;
+  tail = (tail + 1) % buf_size;
   
   pthread_cond_signal(&buf_not_empty);
   pthread_mutex_unlock(&buffer_mutex);//change made here
@@ -49,7 +52,8 @@ worker_func(void *arg) {
       pthread_cond_wait(&buf_not_empty, &buffer_mutex);
     }
     size=size-1;
-    int connfd = work_buffer[size];
+    int connfd = work_buffer[head];
+    head = (head + 1) % buf_size;
     
     pthread_cond_signal(&buf_not_full);
     pthread_mutex_unlock(&buffer_mutex);// change made here
