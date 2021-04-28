@@ -53,6 +53,12 @@ int main(int argc, char *argv[]){
   // /ts.tv_nsec=(sleeptime_ms)*100000;
   // ts.tv_sec=10;
   // fprintf(stdout,"here");
+
+  if(sleeptime_ms < 0)
+    exit(1);
+  if(num_threads < 0)
+    exit(1);
+
   shmfd = shm_open(shm_name, O_RDWR, S_IRUSR | S_IWUSR);
     if (shmfd < 0) {
         perror("shm_open");

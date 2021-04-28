@@ -19,6 +19,7 @@ pthread_cond_t buf_not_empty;
 pthread_condattr_t buf_not_empty_attr;
 slot_t *shm_ptr;
 int * temp;
+char* shm_name;
 
 int buf_size;
 int thread_count;
@@ -108,12 +109,29 @@ void getargs(int *port, int* threads, int* buffers, char** shm_name, int argc, c
   *buffers = atoi(argv[3]);
   *shm_name = (char*) argv[4];
 }
+void intHandler(int dummy) {
+    // TODO: Delete shared memory object here
+    // fprintf(stdout,"lets go");
+    // int ret = munmap(shm_ptr, pagesize);
+    // if (ret != 0) {
+    //     perror("munmap");
+    //     exit(1);
+    // }
+
+    // Delete the shared memory region.
+    int ret = shm_unlink(shm_name);
+    if (ret != 0) {
+        perror("shm_unlink");
+        exit(1);
+    }
+  exit(0);
+}
 
 
 int main(int argc, char *argv[])
 {
   int listenfd, connfd, port, threads, buffers, clientlen;
-  char* shm_name;
+  
   struct sockaddr_in clientaddr;
   int pagesize = getpagesize();
 
@@ -143,23 +161,11 @@ int main(int argc, char *argv[])
     exit(1);
   if(port < 0)
     exit(1);
-  // if(threads==8){
-  //   exit(1);
-  // }
-  // if(buffers==5){
-  //   exit(1);
-  // }
+
   int work_buffer[buf_size];
-  // printf("insallah\n");
-  // work_buffer[0]=0;
+
   temp=work_buffer;
-  // printf("allahoakbar\n");
-  //
-  // CS537 (Part B): Create & initialize the shared memory region...
-  //
-  // 
-  // CS537 (Part A): Create some threads...
-  //
+
   pthread_t workers[threads];
   for (int i = 0; i < threads; ++i) {
     pthread_create(&workers[i], NULL, worker_func, &work_buffer);
@@ -171,6 +177,7 @@ int main(int argc, char *argv[])
         return 1;
     }
   // fprintf(stdout,"made it here");
+  signal(SIGINT, intHandler);
   listenfd = Open_listenfd(port);
   while (1) {
     clientlen = sizeof(clientaddr);
