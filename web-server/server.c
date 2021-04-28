@@ -30,14 +30,14 @@ int head = 0;
 int tail = 0;
 
 void addtobuffer(int connfd, void *arg){
-  int* work_buffer = temp;
+  // int* work_buffer = temp;
   //  printf("in add buffer\n");
-  work_buffer[0]=0;
+  // work_buffer[0]=0;
  
   pthread_mutex_lock(&buffer_mutex);
   while(size == buf_size)
     pthread_cond_wait(&buf_not_full, &buffer_mutex);
-  work_buffer[tail] = connfd;
+  temp[tail] = connfd;
   size=size+1;
   tail = (tail + 1) % buf_size;
   
@@ -48,7 +48,7 @@ void addtobuffer(int connfd, void *arg){
 
 static void * 
 worker_func(void *arg) {
-  int* work_buffer = temp;
+  // int* work_buffer = temp;
   while(1) {
     
     pthread_mutex_lock(&buffer_mutex);
@@ -56,7 +56,7 @@ worker_func(void *arg) {
       pthread_cond_wait(&buf_not_empty, &buffer_mutex);
     }
     size=size-1;
-    int connfd = work_buffer[head];
+    int connfd = temp[head];
     head = (head + 1) % buf_size;
     
     pthread_cond_signal(&buf_not_full);
